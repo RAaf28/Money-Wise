@@ -89,7 +89,7 @@ export function Dashboard() {
   const healthScore = calculateHealthScore()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="min-w-0">
@@ -108,8 +108,8 @@ export function Dashboard() {
       </div>
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-full">
           <div className="flex items-center">
             <div className="p-2 bg-green-100 rounded-lg">
               <TrendingUp className="h-6 w-6 text-green-600" />
@@ -121,7 +121,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-full">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-full">
           <div className="flex items-center">
             <div className="p-2 bg-red-100 rounded-lg">
               <TrendingDown className="h-6 w-6 text-red-600" />
@@ -133,7 +133,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-full">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-full">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Wallet className="h-6 w-6 text-blue-600" />
@@ -149,7 +149,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-full">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 h-full">
           <div className="flex items-center">
             <div className="p-2 bg-purple-100 rounded-lg">
               <Target className="h-6 w-6 text-purple-600" />
@@ -163,12 +163,12 @@ export function Dashboard() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Spending by Category */}
-        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-base font-semibold text-gray-900 mb-3">Spending by Category</h3>
           {spendingData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie
                   data={spendingData}
@@ -188,14 +188,14 @@ export function Dashboard() {
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-56 text-gray-500">
+            <div className="flex items-center justify-center h-48 text-gray-500">
               No spending data yet for this month
             </div>
           )}
         </div>
 
         {/* Budget Status */}
-        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-base font-semibold text-gray-900 mb-3">Budget Status</h3>
           <div className="space-y-4">
             {budgetStatus.map((budget) => (
@@ -226,7 +226,7 @@ export function Dashboard() {
       </div>
 
       {/* Goals Progress */}
-      <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-base font-semibold text-gray-900 mb-3">Goals Progress</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {goalsProgress.map((goal) => (
@@ -262,7 +262,7 @@ export function Dashboard() {
       </div>
 
       {/* Recent Transactions */}
-      <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-base font-semibold text-gray-900 mb-3">Recent Transactions</h3>
         <div className="space-y-3">
           {recentTransactions.map((transaction) => (
