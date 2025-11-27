@@ -6,7 +6,10 @@ set_error_handler(function($severity, $message, $file, $line) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'error' => 'Internal Server Error',
+        'error' => 'Internal Server Error - See debug info',
+        'debug_message' => $message,
+        'debug_file' => $file,
+        'debug_line' => $line
     ]);
     exit;
 });
