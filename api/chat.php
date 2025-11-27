@@ -21,18 +21,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     }
     $user_id = $_GET['user_id'];
 
-    $stmt = $conn->prepare("SELECT role, content, timestamp FROM chat_history WHERE user_id = ? ORDER BY timestamp ASC");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $result = pg_query_params($conn, 'SELECT role, content, timestamp FROM chat_history WHERE user_id = $1 ORDER BY timestamp ASC', array($user_id));
+
+    if (!$result) {
+        http_response_code(500);
+        echo json_encode(array("error" => "Query failed."));
+        exit();
+    }
 
     $history = array();
-    while ($row = $result->fetch_assoc()) {
+    while ($row = pg_fetch_assoc($result)) {
         $history[] = $row;
     }
 
     echo json_encode($history);
-    $stmt->close();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -48,18 +50,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $role = $data->role;
     $content = $data->content;
 
-    $stmt = $conn->prepare("INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)");
-    $stmt->bind_param("iss", $user_id, $role, $content);
+    $result = pg_query_params($conn, 'INSERT INTO chat_history (user_id, role, content) VALUES ($1, $2, $3)', array($user_id, $role, $content));
 
-    if ($stmt->execute()) {
+    if ($result) {
         echo json_encode(array("success" => true, "message" => "Message saved"));
     } else {
         http_response_code(500);
         echo json_encode(array("success" => false, "error" => "Failed to save message"));
     }
-
-    $stmt->close();
 }
 
-$conn->close();
+pg_close($conn);
 ?>

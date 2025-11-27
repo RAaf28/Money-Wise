@@ -7,11 +7,6 @@ set_error_handler(function($severity, $message, $file, $line) {
     echo json_encode([
         'success' => false,
         'error' => 'Internal Server Error',
-        'details' => [
-            'message' => $message,
-            'file' => 'file',
-            'line' => 'line'
-        ]
     ]);
     exit;
 });
@@ -19,28 +14,40 @@ set_error_handler(function($severity, $message, $file, $line) {
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type");
 
-// Get database credentials from environment variables
-$host = getenv('DB_HOST') ?: 'localhost';
-$user = getenv('DB_USER') ?: 'root';
-$password = getenv('DB_PASSWORD') ?: '';
-$dbname = getenv('DB_NAME') ?: 'money_wise';
-$port = getenv('DB_PORT') ?: 3306;
+// Get the connection string from Vercel's environment variables
+$db_url = getenv('POSTGRES_URL');
 
-// Create connection with error handling
-$conn = new mysqli($host, $user, $password, $dbname, $port);
+if (!$db_url) {
+    http_response_code(500);
+    die(json_encode([
+        "success" => false, 
+        "error" => "Database connection string is not configured."
+    ]));
+}
+
+// Parse the connection string
+$db_parts = parse_url($db_url);
+
+$host = $db_parts['host'];
+$port = $db_parts['port'];
+$user = $db_parts['user'];
+$password = $db_parts['pass'];
+$dbname = ltrim($db_parts['path'], '/');
+
+// Build the connection string for pg_connect
+$conn_string = "host={$host} port={$port} dbname={$dbname} user={$user} password={$password}";
+
+// Create connection
+$conn = pg_connect($conn_string);
 
 // Check connection
-if ($conn->connect_error) {
-    // Log error but don't expose details in production
-    error_log("Database connection failed: " . $conn->connect_error);
+if (!$conn) {
+    // Log error but don't expose details
+    error_log("Database connection failed.");
     http_response_code(500);
-    // Use the same JSON structure for consistency
     die(json_encode([
         "success" => false, 
         "error" => "Database connection failed. Please try again later."
     ]));
 }
-
-// Set charset to utf8mb4 for proper character support
-$conn->set_charset("utf8mb4");
 ?>

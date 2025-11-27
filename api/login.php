@@ -31,14 +31,17 @@ if (!$data || !isset($data->email) || !isset($data->password)) {
 $email = $data->email;
 $password = $data->password;
 
-// Use prepared statements to prevent SQL injection
-$stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
-$stmt->bind_param("s", $email);
-$stmt->execute();
-$result = $stmt->get_result();
+// Use pg_query_params for prepared statements
+$result = pg_query_params($conn, 'SELECT * FROM users WHERE email = $1', array($email));
 
-if ($result->num_rows > 0) {
-    $row = $result->fetch_assoc();
+if (!$result) {
+    http_response_code(500);
+    echo json_encode(array("error" => "Query failed."));
+    exit();
+}
+
+if (pg_num_rows($result) > 0) {
+    $row = pg_fetch_assoc($result);
     if (password_verify($password, $row['password'])) {
         $_SESSION['email'] = $email;
         $_SESSION['user_id'] = $row['id'];
@@ -52,6 +55,5 @@ if ($result->num_rows > 0) {
     echo json_encode(array("success" => false, "error" => "User not found"));
 }
 
-$stmt->close();
-$conn->close();
+pg_close($conn);
 ?>

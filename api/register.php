@@ -48,27 +48,29 @@ if (strlen($password) < 6) {
 }
 
 // Check if email already exists
-$stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
-$stmt->bind_param("s", $email);
-$stmt->execute();
-$result = $stmt->get_result();
+$result = pg_query_params($conn, 'SELECT id FROM users WHERE email = $1', array($email));
 
-if ($result->num_rows > 0) {
-    http_response_code(409);
-    echo json_encode(array("error" => "Email already exists"));
-    $stmt->close();
-    $conn->close();
+if (!$result) {
+    http_response_code(500);
+    echo json_encode(array("error" => "Query failed."));
     exit();
 }
-$stmt->close();
+
+if (pg_num_rows($result) > 0) {
+    http_response_code(409);
+    echo json_encode(array("error" => "Email already exists"));
+    pg_close($conn);
+    exit();
+}
 
 // Use prepared statements to prevent SQL injection
 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-$stmt = $conn->prepare("INSERT INTO users (name, email, password) VALUES (?, ?, ?)");
-$stmt->bind_param("sss", $name, $email, $hashed_password);
+$insert_result = pg_query_params($conn, 'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id', array($name, $email, $hashed_password));
 
-if ($stmt->execute()) {
-    $user_id = $stmt->insert_id;
+
+if ($insert_result) {
+    $row = pg_fetch_assoc($insert_result);
+    $user_id = $row['id'];
     http_response_code(201);
     echo json_encode(array("success" => true, "user" => array("id" => $user_id, "name" => $name)));
 } else {
@@ -76,6 +78,5 @@ if ($stmt->execute()) {
     echo json_encode(array("error" => "Registration failed. Please try again."));
 }
 
-$stmt->close();
-$conn->close();
+pg_close($conn);
 ?>
