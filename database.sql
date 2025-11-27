@@ -1,0 +1,19 @@
+CREATE DATABASE money_wise;
+
+USE money_wise;
+
+CREATE TABLE users (
+    id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(30) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    reg_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE chat_history (
+    id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT(6) UNSIGNED,
+    role VARCHAR(10) NOT NULL, -- 'user' or 'model'
+    content TEXT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);

@@ -31,9 +31,10 @@ export interface AICompanion {
   personality: 'supportive' | 'strict' | 'analytical'
   messages: Array<{
     id: string
-    text: string
+    role: 'user' | 'assistant'
+    content: string
     timestamp: Date
-    type: 'suggestion' | 'warning' | 'celebration' | 'reminder'
+    type?: 'suggestion' | 'warning' | 'celebration' | 'reminder'
   }>
 }
 

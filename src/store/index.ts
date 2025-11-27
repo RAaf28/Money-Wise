@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { Transaction, Budget, Goal, AICompanion, SocialCircle, User } from '../types'
+import { apiRequest } from '../config/api'
 
 interface AppState {
   // User data
@@ -10,7 +11,7 @@ interface AppState {
   transactions: Transaction[]
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void
   updateTransaction: (id: string, updates: Partial<Transaction>) => void
-  deleteTransaction: (id: string) => void
+  deleteTransaction: (id:string) => void
   
   // Budgets
   budgets: Budget[]
@@ -27,6 +28,7 @@ interface AppState {
   aiCompanion: AICompanion
   updateAIPersonality: (personality: 'supportive' | 'strict' | 'analytical') => void
   addAIMessage: (message: Omit<AICompanion['messages'][0], 'id'>) => void
+  fetchChatHistory: (userId: string) => Promise<void>
   
   // Social Circles
   socialCircles: SocialCircle[]
@@ -35,174 +37,378 @@ interface AppState {
   // UI State
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
+
+  // Auth actions
+  register: (name: string, email: string, password: string) => Promise<{ success: boolean, user?: User, error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean, user?: User, error?: string }>
+  logout: () => void
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  // User data
-  user: {
-    id: '1',
-    name: 'John Doe',
-    email: 'john@example.com',
-    financialHealthScore: 75,
-    monthlyIncome: 10000000,
-    preferences: {
-      currency: 'IDR',
-      notifications: true,
-      darkMode: false,
-      aiPersonality: 'supportive'
-    }
-  },
-  setUser: (user) => set({ user }),
-  
-  // Transactions
-  transactions: [
-    {
-      id: '1',
-      amount: 50000,
-      description: 'Lunch at Warung',
-      category: 'Food',
-      date: new Date(),
-      type: 'expense',
-      emotion: 'happy'
-    },
-    {
-      id: '2',
-      amount: 150000,
-      description: 'Grocery Shopping',
-      category: 'Groceries',
-      date: new Date(Date.now() - 86400000),
-      type: 'expense',
-      emotion: 'stressed'
-    },
-    {
-      id: '3',
-      amount: 10000000,
-      description: 'Salary',
-      category: 'Income',
-      date: new Date(Date.now() - 172800000),
-      type: 'income'
-    }
-  ],
-  addTransaction: (transaction) => set((state) => ({
-    transactions: [...state.transactions, { ...transaction, id: Date.now().toString() }]
-  })),
-  updateTransaction: (id, updates) => set((state) => ({
-    transactions: state.transactions.map(t => t.id === id ? { ...t, ...updates } : t)
-  })),
-  deleteTransaction: (id) => set((state) => ({
-    transactions: state.transactions.filter(t => t.id !== id)
-  })),
-  
-  // Budgets
-  budgets: [
-    {
-      id: '1',
-      category: 'Food',
-      limit: 2000000,
-      spent: 1200000,
-      period: 'monthly'
-    },
-    {
-      id: '2',
-      category: 'Transportation',
-      limit: 1000000,
-      spent: 750000,
-      period: 'monthly'
-    }
-  ],
-  addBudget: (budget) => set((state) => ({
-    budgets: [...state.budgets, { ...budget, id: Date.now().toString() }]
-  })),
-  updateBudget: (id, updates) => set((state) => ({
-    budgets: state.budgets.map(b => b.id === id ? { ...b, ...updates } : b)
-  })),
-  
-  // Goals
-  goals: [
-    {
-      id: '1',
-      name: 'Emergency Fund',
-      targetAmount: 10000000,
-      currentAmount: 3500000,
-      deadline: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      category: 'Emergency',
-      priority: 'high'
-    },
-    {
-      id: '2',
-      name: 'Vacation to Japan',
-      targetAmount: 15000000,
-      currentAmount: 5000000,
-      deadline: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
-      category: 'Travel',
-      priority: 'medium'
-    }
-  ],
-  addGoal: (goal) => set((state) => ({
-    goals: [...state.goals, { ...goal, id: Date.now().toString() }]
-  })),
-  updateGoal: (id, updates) => set((state) => ({
-    goals: state.goals.map(g => g.id === id ? { ...g, ...updates } : g)
-  })),
-  deleteGoal: (id) => set((state) => ({
-    goals: state.goals.filter(g => g.id !== id)
-  })),
-  
-  // AI Companion
+type PersistedState = Pick<AppState, 'transactions' | 'budgets' | 'goals' | 'aiCompanion' | 'socialCircles'>
+
+const USER_STORAGE_KEY = 'moneywise_user'
+const getUserDataKey = (userId: string) => `moneywise_data_${userId}`
+const isBrowser = typeof window !== 'undefined'
+const getStorage = () => (isBrowser ? window.localStorage : null)
+const generateId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2)
+
+const getDefaultUserData = (): PersistedState => ({
+  transactions: [],
+  budgets: [],
+  goals: [],
+  socialCircles: [],
   aiCompanion: {
     personality: 'supportive',
-    messages: [
-      {
-        id: '1',
-        text: 'Great job on tracking your expenses today! I noticed you spent 20% less on food compared to last week. Keep it up! 🎉',
-        timestamp: new Date(),
-        type: 'celebration'
-      },
-      {
-        id: '2',
-        text: 'Your emergency fund is 35% complete. Consider setting up automatic transfers to reach your goal faster.',
-        timestamp: new Date(Date.now() - 3600000),
-        type: 'suggestion'
+    messages: []
+  }
+})
+
+const serializeUserData = (data: PersistedState) => ({
+  transactions: data.transactions.map(transaction => ({
+    ...transaction,
+    date: transaction.date.toISOString()
+  })),
+  budgets: data.budgets,
+  goals: data.goals.map(goal => ({
+    ...goal,
+    deadline: goal.deadline.toISOString()
+  })),
+  socialCircles: data.socialCircles.map(circle => ({
+    ...circle,
+    challenges: circle.challenges.map(challenge => ({
+      ...challenge,
+      startDate: challenge.startDate.toISOString(),
+      endDate: challenge.endDate.toISOString()
+    }))
+  })),
+  aiCompanion: {
+    personality: data.aiCompanion.personality,
+    messages: data.aiCompanion.messages.map(message => ({
+      ...message,
+      timestamp: message.timestamp.toISOString()
+    }))
+  }
+})
+
+const deserializeUserData = (raw: any): PersistedState => ({
+  transactions: Array.isArray(raw?.transactions)
+    ? raw.transactions.map((transaction: any) => ({
+        ...transaction,
+        date: transaction.date ? new Date(transaction.date) : new Date()
+      }))
+    : [],
+  budgets: Array.isArray(raw?.budgets) ? raw.budgets : [],
+  goals: Array.isArray(raw?.goals)
+    ? raw.goals.map((goal: any) => ({
+        ...goal,
+        deadline: goal.deadline ? new Date(goal.deadline) : new Date()
+      }))
+    : [],
+  socialCircles: Array.isArray(raw?.socialCircles)
+    ? raw.socialCircles.map((circle: any) => ({
+        ...circle,
+        challenges: Array.isArray(circle?.challenges)
+          ? circle.challenges.map((challenge: any) => ({
+              ...challenge,
+              startDate: challenge.startDate ? new Date(challenge.startDate) : new Date(),
+              endDate: challenge.endDate ? new Date(challenge.endDate) : new Date()
+            }))
+          : []
+      }))
+    : [],
+  aiCompanion: {
+    personality: raw?.aiCompanion?.personality ?? 'supportive',
+    messages: Array.isArray(raw?.aiCompanion?.messages)
+      ? raw.aiCompanion.messages.map((message: any) => ({
+          ...message,
+          timestamp: message.timestamp ? new Date(message.timestamp) : new Date()
+        }))
+      : []
+  }
+})
+
+const loadUserFromStorage = (): User | null => {
+  try {
+    const storage = getStorage()
+    if (!storage) return null
+    const stored = storage.getItem(USER_STORAGE_KEY)
+    if (stored) {
+      return JSON.parse(stored) as User
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+const saveUserToStorage = (user: User) => {
+  const storage = getStorage()
+  storage?.setItem(USER_STORAGE_KEY, JSON.stringify(user))
+}
+
+const clearUserStorage = () => {
+  const storage = getStorage()
+  storage?.removeItem(USER_STORAGE_KEY)
+}
+
+const loadUserData = (userId: string): PersistedState => {
+  const storage = getStorage()
+  if (!storage) return getDefaultUserData()
+
+  const key = getUserDataKey(userId)
+  const raw = storage.getItem(key)
+  if (!raw) {
+    const defaults = getDefaultUserData()
+    storage.setItem(key, JSON.stringify(serializeUserData(defaults)))
+    return defaults
+  }
+
+  try {
+    const parsed = JSON.parse(raw)
+    return deserializeUserData(parsed)
+  } catch {
+    const defaults = getDefaultUserData()
+    storage.setItem(key, JSON.stringify(serializeUserData(defaults)))
+    return defaults
+  }
+}
+
+const saveUserData = (userId: string, data: PersistedState) => {
+  const storage = getStorage()
+  if (!storage) return
+  storage.setItem(getUserDataKey(userId), JSON.stringify(serializeUserData(data)))
+}
+
+const mapServerUserToUser = (serverUser: {id: number, name: string}, email: string): User => ({
+  id: serverUser.id.toString(),
+  name: serverUser.name,
+  email: email,
+  financialHealthScore: 75, // Default value
+  monthlyIncome: 0, // Default value
+  preferences: {
+    currency: 'IDR',
+    notifications: true,
+    darkMode: false,
+    aiPersonality: 'supportive'
+  }
+})
+
+export const useAppStore = create<AppState>((set, get) => {
+  const initialUser = loadUserFromStorage()
+  const initialData = initialUser ? loadUserData(initialUser.id) : getDefaultUserData()
+
+  const persistUserData = (partial: Partial<PersistedState> = {}) => {
+    const user = get().user
+    if (!user) return
+    const data: PersistedState = {
+      transactions: partial.transactions ?? get().transactions,
+      budgets: partial.budgets ?? get().budgets,
+      goals: partial.goals ?? get().goals,
+      socialCircles: partial.socialCircles ?? get().socialCircles,
+      aiCompanion: partial.aiCompanion ?? get().aiCompanion
+    }
+    saveUserData(user.id, data)
+  }
+
+  const startUserSession = async (user: User) => {
+    saveUserToStorage(user)
+    const userData = loadUserData(user.id)
+    set({
+      user,
+      ...userData
+    })
+    await get().fetchChatHistory(user.id)
+  }
+
+  const endUserSession = () => {
+    clearUserStorage()
+    set({
+      user: null,
+      ...getDefaultUserData()
+    })
+  }
+
+  return {
+    user: initialUser,
+    transactions: initialData.transactions,
+    budgets: initialData.budgets,
+    goals: initialData.goals,
+    socialCircles: initialData.socialCircles,
+    aiCompanion: initialData.aiCompanion,
+    sidebarOpen: true,
+
+    setUser: (user) => {
+      saveUserToStorage(user)
+      set({ user })
+    },
+
+    setSidebarOpen: (open) => set({ sidebarOpen: open }),
+
+    fetchChatHistory: async (userId) => {
+      try {
+        const history = await apiRequest<any[]>('/chat.php?user_id=' + userId);
+        const messages = history.map(item => ({
+          id: generateId(),
+          content: item.content,
+          role: item.role,
+          timestamp: new Date(item.timestamp),
+        }));
+        set(state => ({
+          aiCompanion: {
+            ...state.aiCompanion,
+            messages,
+          }
+        }))
+      } catch (error) {
+        console.error("Failed to fetch chat history", error)
       }
-    ]
-  },
-  updateAIPersonality: (personality) => set((state) => ({
-    aiCompanion: { ...state.aiCompanion, personality }
-  })),
-  addAIMessage: (message) => set((state) => ({
-    aiCompanion: {
-      ...state.aiCompanion,
-      messages: [...state.aiCompanion.messages, { ...message, id: Date.now().toString() }]
-    }
-  })),
-  
-  // Social Circles
-  socialCircles: [
-    {
-      id: '1',
-      name: 'Financial Goals Squad',
-      members: [
-        { id: '1', name: 'John Doe' },
-        { id: '2', name: 'Jane Smith' },
-        { id: '3', name: 'Mike Johnson' }
-      ],
-      challenges: [
-        {
-          id: '1',
-          title: 'No-Spend Weekend',
-          description: 'Try to spend nothing on entertainment this weekend',
-          startDate: new Date(),
-          endDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-          participants: ['1', '2', '3']
+    },
+
+    addTransaction: (transaction) =>
+      set((state) => {
+        const newTransaction = { ...transaction, id: generateId() }
+        const transactions = [...state.transactions, newTransaction]
+        persistUserData({ transactions })
+        return { transactions }
+      }),
+
+    updateTransaction: (id, updates) =>
+      set((state) => {
+        const transactions = state.transactions.map((t) =>
+          t.id === id ? { ...t, ...updates } : t
+        )
+        persistUserData({ transactions })
+        return { transactions }
+      }),
+
+    deleteTransaction: (id) =>
+      set((state) => {
+        const transactions = state.transactions.filter((t) => t.id !== id)
+        persistUserData({ transactions })
+        return { transactions }
+      }),
+
+    addBudget: (budget) =>
+      set((state) => {
+        const budgets = [...state.budgets, { ...budget, id: generateId() }]
+        persistUserData({ budgets })
+        return { budgets }
+      }),
+
+    updateBudget: (id, updates) =>
+      set((state) => {
+        const budgets = state.budgets.map((b) => (b.id === id ? { ...b, ...updates } : b))
+        persistUserData({ budgets })
+        return { budgets }
+      }),
+
+    addGoal: (goal) =>
+      set((state) => {
+        const goals = [...state.goals, { ...goal, id: generateId() }]
+        persistUserData({ goals })
+        return { goals }
+      }),
+
+    updateGoal: (id, updates) =>
+      set((state) => {
+        const goals = state.goals.map((g) => (g.id === id ? { ...g, ...updates } : g))
+        persistUserData({ goals })
+        return { goals }
+      }),
+
+    deleteGoal: (id) =>
+      set((state) => {
+        const goals = state.goals.filter((g) => g.id !== id)
+        persistUserData({ goals })
+        return { goals }
+      }),
+
+    updateAIPersonality: (personality) =>
+      set((state) => {
+        const aiCompanion = { ...state.aiCompanion, personality }
+        persistUserData({ aiCompanion })
+        return { aiCompanion }
+      }),
+
+    addAIMessage: async (message) => {
+      const user = get().user
+      if (!user) return
+
+      const newMessage = { ...message, id: generateId() }
+      
+      // Update local state immediately
+      set((state) => ({
+        aiCompanion: {
+          ...state.aiCompanion,
+          messages: [...state.aiCompanion.messages, newMessage]
         }
-      ]
+      }))
+      
+      // Persist to backend
+      try {
+        await apiRequest('/chat.php', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: user.id,
+            role: message.role,
+            content: message.content
+          })
+        })
+      } catch (error) {
+        console.error("Failed to save message", error)
+        // Here you might want to handle the error, e.g. show a notification
+        // or remove the message that failed to save.
+      }
+    },
+
+    addSocialCircle: (circle) =>
+      set((state) => {
+        const socialCircles = [...state.socialCircles, { ...circle, id: generateId() }]
+        persistUserData({ socialCircles })
+        return { socialCircles }
+      }),
+
+    register: async (name, email, password) => {
+      try {
+        const response = await apiRequest<{ success: boolean; user?: { id: number; name: string }; error?: string }>('/register.php', {
+          method: 'POST',
+          body: JSON.stringify({ username: email, name, password }),
+        });
+
+        if (response.success && response.user) {
+          const user = mapServerUserToUser(response.user, email);
+          await startUserSession(user);
+          return { success: true, user };
+        }
+        return { success: false, error: response.error };
+      } catch (error) {
+        return { success: false, error: (error as Error).message };
+      }
+    },
+
+    login: async (email, password) => {
+      try {
+        const response = await apiRequest<{ success: boolean; user?: { id: number; name: string }; error?: string }>('/login.php', {
+          method: 'POST',
+          body: JSON.stringify({ username: email, password }),
+        });
+
+        if (response.success && response.user) {
+          const user = mapServerUserToUser(response.user, email);
+          await startUserSession(user);
+          return { success: true, user };
+        }
+        return { success: false, error: response.error };
+      } catch (error) {
+        return { success: false, error: (error as Error).message };
+      }
+    },
+
+    logout: () => {
+      endUserSession()
     }
-  ],
-  addSocialCircle: (circle) => set((state) => ({
-    socialCircles: [...state.socialCircles, { ...circle, id: Date.now().toString() }]
-  })),
-  
-  // UI State
-  sidebarOpen: true,
-  setSidebarOpen: (open) => set({ sidebarOpen: open })
-}))
+  }
+})

@@ -1,18 +1,19 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { 
   Bot, 
   Send, 
   Settings, 
   MessageCircle, 
   TrendingUp, 
-  AlertTriangle,
-  CheckCircle,
   Target,
-  Brain,
   Zap,
-  Heart
+  Loader2,
+  Heart,
+  AlertTriangle,
+  Brain
 } from 'lucide-react'
 import { useAppStore } from '../store'
+import { AICompanion as AICompanionType } from '../types'
 
 const personalityConfig = {
   supportive: {
@@ -41,127 +42,183 @@ const personalityConfig = {
   }
 }
 
-const messageTypes = {
-  suggestion: { icon: Target, color: 'text-blue-600', bg: 'bg-blue-100' },
-  warning: { icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100' },
-  celebration: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' },
-  reminder: { icon: MessageCircle, color: 'text-yellow-600', bg: 'bg-yellow-100' }
+function getPersonalityMessage(personality: keyof typeof personalityConfig): string {
+  switch (personality) {
+    case 'supportive':
+      return "I'm here to cheer you on every step of the way! Let's celebrate your wins together. 🎉 How can I help you with your finances today?"
+    case 'strict':
+      return "No excuses. Let's get serious about your financial goals and make real progress. 💪 What financial challenge can we tackle together?"
+    case 'analytical':
+      return "Let me analyze your financial data and provide data-driven insights for optimal decision making. 📊 What would you like me to analyze?"
+    default:
+      return "I'm here to help you manage your finances better! Ask me anything about budgeting, saving, or financial planning."
+  }
 }
 
 export function AICompanion() {
-  const { aiCompanion, updateAIPersonality, addAIMessage, transactions, budgets, goals } = useAppStore()
+  const { aiCompanion, updateAIPersonality, addAIMessage, user } = useAppStore()
   const [newMessage, setNewMessage] = useState('')
   const [showPersonalitySettings, setShowPersonalitySettings] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  const CHAT_API_URL = import.meta.env.VITE_CHAT_API_URL || 'http://localhost:3001/chat'
 
   const currentPersonality = personalityConfig[aiCompanion.personality]
 
-  const generateAIMessage = () => {
-    const recentTransactions = transactions.slice(-5)
-    const overspentBudgets = budgets.filter(b => b.spent > b.limit)
-    const goalsProgress = goals.map(g => ({ ...g, progress: (g.currentAmount / g.targetAmount) * 100 }))
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [aiCompanion.messages])
 
-    let message = ''
-    let type: keyof typeof messageTypes = 'suggestion'
-
-    // Analyze spending patterns
-    const totalSpent = recentTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0)
-
-    const avgSpending = totalSpent / recentTransactions.filter(t => t.type === 'expense').length
-
-    if (aiCompanion.personality === 'supportive') {
-      if (goalsProgress.some(g => g.progress > 50)) {
-        message = "Great progress on your goals! You're doing amazing. Keep up the consistent effort! 🌟"
-        type = 'celebration'
-      } else if (avgSpending < 100000) {
-        message = "I noticed you've been spending wisely lately. Your financial discipline is really paying off! 💪"
-        type = 'celebration'
-      } else {
-        message = "Every small step counts! Consider setting a daily spending limit to help reach your goals faster."
-        type = 'suggestion'
-      }
-    } else if (aiCompanion.personality === 'strict') {
-      if (overspentBudgets.length > 0) {
-        message = `You've overspent on ${overspentBudgets.length} budget categories. Time to tighten up and get back on track.`
-        type = 'warning'
-      } else if (goalsProgress.some(g => g.progress < 20)) {
-        message = "Your goals are barely progressing. You need to increase your savings rate immediately."
-        type = 'warning'
-      } else {
-        message = "Good discipline. Now push harder - you can save even more than you think."
-        type = 'suggestion'
-      }
-    } else { // analytical
-      const spendingByCategory = recentTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((acc, t) => {
-          acc[t.category] = (acc[t.category] || 0) + t.amount
-          return acc
-        }, {} as Record<string, number>)
-
-      const topCategory = Object.entries(spendingByCategory)
-        .sort(([,a], [,b]) => b - a)[0]
-
-      if (topCategory) {
-        message = `Analysis: ${topCategory[0]} accounts for ${((topCategory[1] / totalSpent) * 100).toFixed(1)}% of your spending. Consider optimizing this category for better financial efficiency.`
-        type = 'suggestion'
-      } else {
-        message = "Insufficient data for analysis. Please add more transactions to get personalized insights."
-        type = 'reminder'
-      }
-    }
-
-    addAIMessage({
-      text: message,
-      timestamp: new Date(),
-      type
-    })
-  }
-
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim()) return
+    if (!newMessage.trim() || isLoading || !user) return
 
-    addAIMessage({
-      text: newMessage,
-      timestamp: new Date(),
-      type: 'suggestion'
-    })
+    const userMessageContent = newMessage.trim()
     setNewMessage('')
-  }
+    setIsLoading(true)
 
-  const getPersonalityMessage = (personality: keyof typeof personalityConfig) => {
-    switch (personality) {
-      case 'supportive':
-        return "I'm here to cheer you on every step of the way! Let's celebrate your wins together. 🎉"
-      case 'strict':
-        return "No excuses. Let's get serious about your financial goals and make real progress. 💪"
-      case 'analytical':
-        return "Let me analyze your financial data and provide data-driven insights for optimal decision making. 📊"
-      default:
-        return "I'm here to help you manage your finances better!"
+    const userMessage: Omit<AICompanionType['messages'][0], 'id'> = {
+      role: 'user',
+      content: userMessageContent,
+      timestamp: new Date()
+    }
+    addAIMessage(userMessage)
+
+    try {
+      const history = aiCompanion.messages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        content: msg.content
+      }))
+
+      const response = await fetch(CHAT_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessageContent,
+          history: history.slice(-10)
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.details || `HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      const assistantMessage: Omit<AICompanionType['messages'][0], 'id'> = {
+        role: 'assistant',
+        content: data.response,
+        timestamp: new Date(),
+        type: 'suggestion' // default type
+      }
+      addAIMessage(assistantMessage)
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const errorMsg: Omit<AICompanionType['messages'][0], 'id'> = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${errorMessage}. Please check if the backend server is running on port 3001.`,
+        timestamp: new Date(),
+        type: 'warning'
+      }
+      addAIMessage(errorMsg)
+    } finally {
+      setIsLoading(false)
     }
   }
+
+  const handleQuickAction = async (message: string) => {
+    if (isLoading || !user) return
+    
+    setIsLoading(true)
+
+    const userMessage: Omit<AICompanionType['messages'][0], 'id'> = {
+      role: 'user',
+      content: message,
+      timestamp: new Date()
+    }
+    addAIMessage(userMessage)
+
+    try {
+      const history = aiCompanion.messages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        content: msg.content
+      }))
+
+      const response = await fetch(CHAT_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          history: history.slice(-10)
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || errorData.details || `HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      const assistantMessage: Omit<AICompanionType['messages'][0], 'id'> = {
+        role: 'assistant',
+        content: data.response,
+        timestamp: new Date(),
+        type: 'suggestion'
+      }
+      addAIMessage(assistantMessage)
+    } catch (error) {
+      console.error('Error sending message:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const errorMsg: Omit<AICompanionType['messages'][0], 'id'> = {
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${errorMessage}.`,
+        timestamp: new Date(),
+        type: 'warning'
+      }
+      addAIMessage(errorMsg)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const displayedMessages = aiCompanion.messages.length > 0 
+    ? aiCompanion.messages 
+    : [{
+        id: 'welcome-1',
+        role: 'assistant',
+        content: getPersonalityMessage(aiCompanion.personality),
+        timestamp: new Date()
+      }]
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* header + controls */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">AI Financial Companion</h1>
           <p className="text-gray-600">Your personalized financial assistant with adaptive personality</p>
         </div>
-        <button
-          onClick={() => setShowPersonalitySettings(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Settings className="h-4 w-4" />
-          <span>Settings</span>
-        </button>
+
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowPersonalitySettings(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Settings className="h-4 w-4" />
+            <span>Settings</span>
+          </button>
+        </div>
       </div>
 
-      {/* Personality Overview */}
+      {/* Personality overview unchanged */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <div className="flex items-center space-x-4">
           <div className={`p-3 rounded-lg ${currentPersonality.bgColor}`}>
@@ -181,7 +238,7 @@ export function AICompanion() {
         </div>
       </div>
 
-      {/* Chat Interface */}
+      {/* Chat Interface container */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center space-x-2">
@@ -190,116 +247,136 @@ export function AICompanion() {
           </div>
         </div>
 
-        {/* Messages */}
-        <div className="h-96 overflow-y-auto p-4 space-y-4">
-          {/* Welcome Message */}
-          <div className="flex items-start space-x-3">
-            <div className="p-2 bg-blue-100 rounded-full">
-              <Bot className="h-4 w-4 text-blue-600" />
+        {/* Chat Messages */}
+          <div className="h-96 overflow-y-auto p-4 space-y-4">
+          {displayedMessages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex items-start space-x-3 ${
+                message.role === 'user' ? 'justify-end' : 'justify-start'
+              }`}
+            >
+              {message.role === 'assistant' && (
+                <div className="p-2 bg-blue-100 rounded-full flex-shrink-0">
+                  <Bot className="h-4 w-4 text-blue-600" />
+                </div>
+              )}
+              <div
+                className={`p-3 rounded-lg max-w-md ${
+                  message.role === 'user'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-800'
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{message.content}</p>
+                <p className={`text-xs mt-1 ${
+                  message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                }`}>
+                  {message.timestamp.toLocaleTimeString('id-ID', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </p>
+              </div>
+              {message.role === 'user' && (
+                <div className="p-2 bg-gray-200 rounded-full flex-shrink-0">
+                  <MessageCircle className="h-4 w-4 text-gray-600" />
+                </div>
+              )}
             </div>
-            <div className="bg-gray-100 p-3 rounded-lg max-w-md">
-              <p className="text-gray-800">{getPersonalityMessage(aiCompanion.personality)}</p>
-              <p className="text-xs text-gray-500 mt-1">AI Companion</p>
+          ))}
+          {isLoading && (
+            <div className="flex items-start space-x-3">
+              <div className="p-2 bg-blue-100 rounded-full">
+                <Bot className="h-4 w-4 text-blue-600" />
+              </div>
+              <div className="bg-gray-100 p-3 rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              </div>
             </div>
+          )}
+          <div ref={messagesEndRef} />
           </div>
 
-          {/* AI Messages */}
-          {aiCompanion.messages.map((message) => {
-            const messageType = messageTypes[message.type]
-            return (
-              <div key={message.id} className="flex items-start space-x-3">
-                <div className={`p-2 rounded-full ${messageType.bg}`}>
-                  <messageType.icon className={`h-4 w-4 ${messageType.color}`} />
-                </div>
-                <div className="bg-blue-50 p-3 rounded-lg max-w-md">
-                  <p className="text-gray-800">{message.text}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {message.timestamp.toLocaleString('id-ID')}
-                  </p>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Message Input */}
-        <div className="p-4 border-t border-gray-200">
-          <form onSubmit={handleSendMessage} className="flex space-x-3">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Ask me anything about your finances..."
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <button
-              type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-            >
-              <Send className="h-4 w-4" />
-              <span>Send</span>
-            </button>
-          </form>
-        </div>
+        {/* Chat Input */}
+          <div className="p-4 border-t border-gray-200">
+            <form onSubmit={handleSendMessage} className="flex space-x-3">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Ask me anything about your finances..."
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isLoading || !user}
+              />
+              <button
+                type="submit"
+              disabled={isLoading || !newMessage.trim() || !user}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+                <span>Send</span>
+              </button>
+            </form>
+          </div>
       </div>
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
-          onClick={generateAIMessage}
+          onClick={() => handleQuickAction("Can you analyze my spending patterns and give me advice?")}
           className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
+          disabled={!user}
         >
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-purple-100 rounded-lg">
               <Zap className="h-5 w-5 text-purple-600" />
             </div>
             <div>
-              <h4 className="font-medium text-gray-900">Generate Insight</h4>
+              <h4 className="font-medium text-gray-900">Spending Analysis</h4>
               <p className="text-sm text-gray-600">Get personalized financial advice</p>
             </div>
           </div>
         </button>
 
         <button
-          onClick={() => addAIMessage({
-            text: "Let me analyze your spending patterns and suggest optimizations.",
-            timestamp: new Date(),
-            type: 'suggestion'
-          })}
+          onClick={() => handleQuickAction("How can I improve my budgeting strategy?")}
           className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
+          disabled={!user}
         >
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-green-100 rounded-lg">
               <TrendingUp className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <h4 className="font-medium text-gray-900">Spending Analysis</h4>
-              <p className="text-sm text-gray-600">Review your spending patterns</p>
+              <h4 className="font-medium text-gray-900">Budget Tips</h4>
+              <p className="text-sm text-gray-600">Get budgeting strategies</p>
             </div>
           </div>
         </button>
 
         <button
-          onClick={() => addAIMessage({
-            text: "Based on your current progress, here are some goal optimization strategies...",
-            timestamp: new Date(),
-            type: 'suggestion'
-          })}
+          onClick={() => handleQuickAction("What are some ways to save more money?")}
           className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow text-left"
+          disabled={!user}
         >
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Target className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <h4 className="font-medium text-gray-900">Goal Strategy</h4>
-              <p className="text-sm text-gray-600">Optimize your savings goals</p>
+              <h4 className="font-medium text-gray-900">Savings Tips</h4>
+              <p className="text-sm text-gray-600">Learn how to save more</p>
             </div>
           </div>
         </button>
       </div>
 
-      {/* Personality Settings Modal */}
+      {/* Personality Settings Modal unchanged */}
       {showPersonalitySettings && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
