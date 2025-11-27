@@ -329,7 +329,7 @@ export function Dashboard() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className="text-gray-800">{message.text}</p>
+                  <p className="text-gray-800">{message.content}</p>
                   <p className="text-xs text-gray-500 mt-1">
                     {message.timestamp.toLocaleString('id-ID')}
                   </p>
