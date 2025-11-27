@@ -11,31 +11,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(array("error" => "Method Not Allowed"));
+    exit();
+}
+
+
 session_start();
 
 $data = json_decode(file_get_contents("php://input"));
 
-if (!$data || !isset($data->username) || !isset($data->password)) {
+if (!$data || !isset($data->email) || !isset($data->password)) {
     http_response_code(400);
-    echo json_encode(array("error" => "Username and password are required"));
+    echo json_encode(array("error" => "Email and password are required"));
     exit();
 }
 
-$username = $data->username;
+$email = $data->email;
 $password = $data->password;
 
 // Use prepared statements to prevent SQL injection
-$stmt = $conn->prepare("SELECT * FROM users WHERE username = ?");
-$stmt->bind_param("s", $username);
+$stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
+$stmt->bind_param("s", $email);
 $stmt->execute();
 $result = $stmt->get_result();
 
 if ($result->num_rows > 0) {
     $row = $result->fetch_assoc();
     if (password_verify($password, $row['password'])) {
-        $_SESSION['username'] = $username;
+        $_SESSION['email'] = $email;
         $_SESSION['user_id'] = $row['id'];
-        echo json_encode(array("success" => true, "user" => array("id" => $row['id'], "name" => $row['username'])));
+        echo json_encode(array("success" => true, "user" => array("id" => $row['id'], "name" => $row['name'])));
     } else {
         http_response_code(401);
         echo json_encode(array("success" => false, "error" => "Invalid password"));

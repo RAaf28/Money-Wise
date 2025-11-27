@@ -375,7 +375,7 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         const response = await apiRequest<{ success: boolean; user?: { id: number; name: string }; error?: string }>('/register.php', {
           method: 'POST',
-          body: JSON.stringify({ username: email, name, password }),
+          body: JSON.stringify({ email, name, password }),
         });
 
         if (response.success && response.user) {
@@ -393,7 +393,7 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         const response = await apiRequest<{ success: boolean; user?: { id: number; name: string }; error?: string }>('/login.php', {
           method: 'POST',
-          body: JSON.stringify({ username: email, password }),
+          body: JSON.stringify({ email, password }),
         });
 
         if (response.success && response.user) {

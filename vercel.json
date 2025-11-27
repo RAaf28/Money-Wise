@@ -1,6 +1,19 @@
 {
   "name": "money-wise",
   "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.php",
+      "use": "@vercel/php"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
